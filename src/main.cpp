@@ -6,7 +6,7 @@ Gladiator *gladiator;
 Maze *maze;
 
 int MAZE_SIZE = 3;
-int CELL_SIZE = 3 /
+int CELL_SIZE = 3;
 
 float kw = 0.1; //kw et kv sont des constantes de réglage du correcteur qu'il faut ajuster avec des tests
 float kv = 0.1; // Plus elles sont grandes, plus le robot va vite mais plus il risque de ne pas s'arrêter à temps
