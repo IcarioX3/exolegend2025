@@ -191,30 +191,47 @@ void search_next_square()
     MazeSquare *mazeSquare = maze->getSquare(posIndex.x(), posIndex.y());
     if (mazeSquare != nullptr)
     {
+        //On regarde s'il y a une bombe à collecter à coté de nous
+        if (maze->getSquare(posIndex.x(), posIndex.y() + 1) != nullptr && maze->getSquare(posIndex.x(), posIndex.y() + 1)->coin.value > 0)
+        {
+            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() + 1), pos);
+        }
+        else if (maze->getSquare(posIndex.x(), posIndex.y() - 1) != nullptr && maze->getSquare(posIndex.x(), posIndex.y() - 1)->coin.value > 0)
+        {
+            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() - 1), pos);
+        }
+        else if (maze->getSquare(posIndex.x() + 1, posIndex.y()) != nullptr && maze->getSquare(posIndex.x() + 1, posIndex.y())->coin.value > 0)
+        {
+            go_to(index_to_coordinates((int)posIndex.x() + 1, (int)posIndex.y()), pos);
+        }
+        else if (maze->getSquare(posIndex.x() - 1, posIndex.y()) != nullptr && maze->getSquare(posIndex.x() - 1, posIndex.y())->coin.value > 0)
+        {
+            go_to(index_to_coordinates((int)posIndex.x() - 1, (int)posIndex.y()), pos);
+        }
         // On cherche une case accessible et non encore visitée
         if (mazeSquare->northSquare != nullptr && MAZE_TRACK[(int)posIndex.x()][(int)posIndex.y() + 1] == 0)
         {
-            gladiator->log(("Déplacement vers le Nord: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() - 1) + ")").c_str());
+            // gladiator->log(("Déplacement vers le Nord: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() - 1) + ")").c_str());
             go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() + 1), pos);
         }
         else if (mazeSquare->southSquare != nullptr && MAZE_TRACK[(int)posIndex.x()][(int)posIndex.y() - 1] == 0)
         {
-            gladiator->log(("Déplacement vers le Sud: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() + 1) + ")").c_str());
+            // gladiator->log(("Déplacement vers le Sud: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() + 1) + ")").c_str());
             go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() - 1), pos);
         }
         else if (mazeSquare->eastSquare != nullptr && MAZE_TRACK[(int)posIndex.x() + 1][(int)posIndex.y()] == 0)
         {
-            gladiator->log(("Déplacement vers l'Est: (" + std::to_string((int)posIndex.x() + 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
+            // gladiator->log(("Déplacement vers l'Est: (" + std::to_string((int)posIndex.x() + 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
             go_to(index_to_coordinates((int)posIndex.x() + 1, (int)posIndex.y()), pos);
         }
         else if (mazeSquare->westSquare != nullptr && MAZE_TRACK[(int)posIndex.x() - 1][(int)posIndex.y()] == 0)
         {
-            gladiator->log(("Déplacement vers l'Ouest: (" + std::to_string((int)posIndex.x() - 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
+            // gladiator->log(("Déplacement vers l'Ouest: (" + std::to_string((int)posIndex.x() - 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
             go_to(index_to_coordinates((int)posIndex.x() - 1, (int)posIndex.y()), pos);
         }
         else
         {
-            gladiator->log("No available square");
+            // gladiator->log("No available square");
             go_to(index_to_coordinates(6, 6), pos);
         }
     }
@@ -224,11 +241,41 @@ void search_next_square()
     }
 }
 
+void bomb_placement()
+{
+    auto posRaw = gladiator->robot->getData().position;
+    Vector2 pos{posRaw.x, posRaw.y};
+    Vector2 posIndex = coordinates_to_index(pos);
+    int bomb_value = 0;
+    int team = gladiator->robot->getData().teamId;
+    int minimum_point_needed = 3;
+
+    MazeSquare *mazeSquare = maze->getSquare(posIndex.x(), posIndex.y());
+    if (mazeSquare != nullptr)
+    {
+        // On compte les cases valide
+        if (mazeSquare != nullptr && mazeSquare->possession != team && !mazeSquare->danger)
+            bomb_value++;
+        if (mazeSquare->northSquare != nullptr && mazeSquare->northSquare->possession != team && !mazeSquare->northSquare->danger)
+            bomb_value++;
+        if (mazeSquare->southSquare != nullptr && mazeSquare->southSquare->possession != team && !mazeSquare->southSquare->danger)
+            bomb_value++;
+        if (mazeSquare->eastSquare != nullptr && mazeSquare->eastSquare->possession != team && !mazeSquare->eastSquare->danger)
+            bomb_value++;
+        if (mazeSquare->westSquare != nullptr && mazeSquare->westSquare->possession != team && !mazeSquare->westSquare->danger)
+            bomb_value++;
+    }
+    if (gladiator->weapon->getBombCount() && bomb_value >= minimum_point_needed) {
+        gladiator->log(("nombre de cases valide: " + std::to_string((int)bomb_value)).c_str());
+        gladiator->weapon->dropBombs(1);
+    }
+}
 
 void loop()
 {
     if (gladiator->game->isStarted())
     {
+        bomb_placement();
         update_maze();  // Mise à jour du suivi du labyrinthe
         search_next_square();  // Recherche d'une nouvelle case
     }
