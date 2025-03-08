@@ -1,5 +1,6 @@
 #include "gladiator.h"
 #include <cmath>
+#include <queue>
 #undef abs
 
 Gladiator *gladiator;
@@ -8,15 +9,17 @@ Maze *maze;
 int MAZE_SIZE = 3;
 float CELL_SIZE = MAZE_SIZE / 12.f;
 
-//kw est 
-float kw = 1.5; //kw et kv sont des constantes de réglage du correcteur qu'il faut ajuster avec des tests
-float kv = 1.f; // Plus elles sont grandes, plus le robot va vite mais plus il risque de ne pas s'arrêter à temps
-float wlimit = 3.f; // wlimit et vlimit sont les limites de vitesse angulaire et linéaire du robot
-float vlimit = 0.6;
-float erreurPos = 0.13; // erreurPos est la distance minimale à laquelle le robot doit être de la consigne pour s'arrêter
+float kw = 1.7;
+float kv = 1.5;
+float wlimit = 3.f;
+float vlimit = 2.5f;
+float erreurPos = 0.5;
 
-//store the maze square where i already went 
 int MAZE_TRACK[12][12] = {0};
+
+// unsigned long previousTime = 0; // Stocke le dernier moment où la variable a été incrémentée
+// const unsigned long interval = 13000; // Intervalle de 14 secondes (en millisecondes)
+// int counter = 0; // Variable à incrémenter
 
 class Vector2
 {
@@ -107,6 +110,7 @@ double reductionAngle(double x)
         x += 2 * PI;
     return x - PI;
 }
+
 void go_to(Vector2 cons, Vector2 pos)
 {
     double consvl, consvr;
@@ -148,98 +152,106 @@ void setup()
     maze = new Maze();
     // enregistrement de la fonction de reset qui s'éxecute à chaque fois avant qu'une partie commence
     gladiator->game->onReset(&reset); // GFA 4.4.1
+    Serial.begin(9600); // Initialiser la communication série
 }
 
-//Index to coordinates
-Vector2 index_to_coordinates(int i, int j)
-{
+Vector2 index_to_coordinates(int i, int j) {
     return Vector2(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
 }
 
-//Coordinates to index
-Vector2 coordinates_to_index(Vector2 pos)
-{
+Vector2 coordinates_to_index(Vector2 pos) {
     return Vector2((int)(pos.x() / CELL_SIZE), (int)(pos.y() / CELL_SIZE));
 }
 
-//If we are close to the center of a maze square, we are considered to be in the square and we can update the maze array
-void update_maze()
-{
+void update_maze() {
     auto posRaw = gladiator->robot->getData().position;
     Vector2 pos{posRaw.x, posRaw.y};
     Vector2 posIndex = coordinates_to_index(pos);
     Vector2 target = index_to_coordinates(posIndex.x(), posIndex.y());
-
-    // Vérifier si on est proche du centre de la case
-    if ((pos - target).norm2() < erreurPos)
-    {
+    if ((pos - target).norm2() < erreurPos) {
         MAZE_TRACK[(int)posIndex.x()][(int)posIndex.y()] = 1;
     }
 }
 
+struct Node {
+    int x, y;
+    Node() : x(0), y(0) {}
+    Node(int x, int y) : x(x), y(y) {}
+    bool operator==(const Node& other) const { return x == other.x && y == other.y; }
+};
 
-//Search if there is a maze square available next to us thatwe never went to. If not go in the direction of the center of the maze until we find one
-//We can have sqaure maze info with maze.getSquare(i, j) and  it return a MazeSquare object
-//If we have a MazeSquare object we can get the walls with mazeSquare.north(), mazeSquare.south() and so on ans return a null pointer if there is a wall else return a pointer to the next square
-//We can also get the position of the square with mazeSquare.i and mazeSquare.
-void search_next_square()
-{
+Node bfs_find_bomb(Vector2 start) {
+    Node queue[144]; // 12 * 12 maximum nodes
+    bool visited[12][12] = {false};
+    Node parent[12][12]; // Tableau pour stocker le parent de chaque case
+
+    int front = 0, back = 0;
+    queue[back++] = Node(start.x(), start.y());
+    visited[(int)start.x()][(int)start.y()] = true;
+    parent[(int)start.x()][(int)start.y()] = Node(-1, -1); // Marqueur de début
+
+    while (front < back) {
+        Node current = queue[front++];
+        MazeSquare *sq = maze->getSquare(current.x, current.y);
+        
+        // Si une bombe est trouvée, reconstruire le chemin
+        if (sq && sq->coin.value > 0) {
+            Node step = current;
+            while (!(parent[step.x][step.y] == Node(-1, -1))) { // Tant qu'on n'est pas à l'origine
+                if (parent[parent[step.x][step.y].x][parent[step.x][step.y].y] == Node(-1, -1)) {
+                    return step; // Premier mouvement depuis le départ
+                }
+                step = parent[step.x][step.y];
+            }
+        }
+
+        Node neighbors[4];
+        int neighborCount = 0;
+        if (sq->northSquare != nullptr) neighbors[neighborCount++] = Node(current.x, current.y + 1);
+        if (sq->southSquare != nullptr) neighbors[neighborCount++] = Node(current.x, current.y - 1);
+        if (sq->eastSquare != nullptr)  neighbors[neighborCount++] = Node(current.x + 1, current.y);
+        if (sq->westSquare != nullptr)  neighbors[neighborCount++] = Node(current.x - 1, current.y);
+        //check walls and add counter for each direction
+        // if (sq->northSquare != nullptr && sq->j + counter < 12) neighbors[neighborCount++] = Node(current.x, current.y + 1);
+        // if (sq->southSquare != nullptr && sq->j - counter >= 0) neighbors[neighborCount++] = Node(current.x, current.y - 1);
+        // if (sq->eastSquare != nullptr && sq->i + counter < 12)  neighbors[neighborCount++] = Node(current.x + 1, current.y);
+        // if (sq->westSquare != nullptr && sq->i - counter >= 0)  neighbors[neighborCount++] = Node(current.x - 1, current.y);
+
+        for (int i = 0; i < neighborCount; ++i) {
+            Node n = neighbors[i];
+            if (!visited[n.x][n.y]) {
+                queue[back++] = n;
+                visited[n.x][n.y] = true;
+                parent[n.x][n.y] = current; // Stocke le parent
+            }
+        }
+    }
+
+    return Node(start.x(), start.y()); // Si aucune bombe trouvée, rester sur place
+}
+
+
+void move_to_next_bomb() {
     auto posRaw = gladiator->robot->getData().position;
     Vector2 pos{posRaw.x, posRaw.y};
     Vector2 posIndex = coordinates_to_index(pos);
 
-    MazeSquare *mazeSquare = maze->getSquare(posIndex.x(), posIndex.y());
-    if (mazeSquare != nullptr)
-    {
-        //On regarde s'il y a une bombe à collecter à coté de nous
-        if (maze->getSquare(posIndex.x(), posIndex.y() + 1) != nullptr && maze->getSquare(posIndex.x(), posIndex.y() + 1)->coin.value > 0)
-        {
-            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() + 1), pos);
-        }
-        else if (maze->getSquare(posIndex.x(), posIndex.y() - 1) != nullptr && maze->getSquare(posIndex.x(), posIndex.y() - 1)->coin.value > 0)
-        {
-            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() - 1), pos);
-        }
-        else if (maze->getSquare(posIndex.x() + 1, posIndex.y()) != nullptr && maze->getSquare(posIndex.x() + 1, posIndex.y())->coin.value > 0)
-        {
-            go_to(index_to_coordinates((int)posIndex.x() + 1, (int)posIndex.y()), pos);
-        }
-        else if (maze->getSquare(posIndex.x() - 1, posIndex.y()) != nullptr && maze->getSquare(posIndex.x() - 1, posIndex.y())->coin.value > 0)
-        {
-            go_to(index_to_coordinates((int)posIndex.x() - 1, (int)posIndex.y()), pos);
-        }
-        // On cherche une case accessible et non encore visitée
-        if (mazeSquare->northSquare != nullptr && MAZE_TRACK[(int)posIndex.x()][(int)posIndex.y() + 1] == 0)
-        {
-            // gladiator->log(("Déplacement vers le Nord: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() - 1) + ")").c_str());
-            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() + 1), pos);
-        }
-        else if (mazeSquare->southSquare != nullptr && MAZE_TRACK[(int)posIndex.x()][(int)posIndex.y() - 1] == 0)
-        {
-            // gladiator->log(("Déplacement vers le Sud: (" + std::to_string((int)posIndex.x()) + ", " + std::to_string((int)posIndex.y() + 1) + ")").c_str());
-            go_to(index_to_coordinates((int)posIndex.x(), (int)posIndex.y() - 1), pos);
-        }
-        else if (mazeSquare->eastSquare != nullptr && MAZE_TRACK[(int)posIndex.x() + 1][(int)posIndex.y()] == 0)
-        {
-            // gladiator->log(("Déplacement vers l'Est: (" + std::to_string((int)posIndex.x() + 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
-            go_to(index_to_coordinates((int)posIndex.x() + 1, (int)posIndex.y()), pos);
-        }
-        else if (mazeSquare->westSquare != nullptr && MAZE_TRACK[(int)posIndex.x() - 1][(int)posIndex.y()] == 0)
-        {
-            // gladiator->log(("Déplacement vers l'Ouest: (" + std::to_string((int)posIndex.x() - 1) + ", " + std::to_string((int)posIndex.y()) + ")").c_str());
-            go_to(index_to_coordinates((int)posIndex.x() - 1, (int)posIndex.y()), pos);
-        }
-        else
-        {
-            // gladiator->log("No available square");
-            go_to(index_to_coordinates(6, 6), pos);
-        }
+    Node nextMove = bfs_find_bomb(posIndex);
+    gladiator->log(("nextMove: " + std::to_string(nextMove.x) + ", " + std::to_string(nextMove.y)).c_str());
+    
+    //si on est à la distance inférieur à erreurPos d'une bombe et qu'elle n'est pas dérriere un mur, on va dans sa direction
+    Vector2 nextMovePos = index_to_coordinates(nextMove.x, nextMove.y);
+    Vector2 nextMoveDir = nextMovePos - pos;
+    if (nextMoveDir.norm2() < erreurPos) {
+        gladiator->log("Going to bomb with first move at %f, %f", nextMovePos.x(), nextMovePos.y());
+        go_to(nextMovePos, pos);
     }
-    else
-    {
-        go_to(index_to_coordinates(6, 6), pos);
+
+    else if (nextMove.x != (int)posIndex.x() || nextMove.y != (int)posIndex.y()) {
+        go_to(index_to_coordinates(nextMove.x, nextMove.y), pos);
     }
 }
+
 
 void bomb_placement()
 {
@@ -266,18 +278,28 @@ void bomb_placement()
             bomb_value++;
     }
     if (gladiator->weapon->getBombCount() && bomb_value >= minimum_point_needed) {
-        gladiator->log(("nombre de cases valide: " + std::to_string((int)bomb_value)).c_str());
         gladiator->weapon->dropBombs(1);
     }
 }
 
-void loop()
-{
-    if (gladiator->game->isStarted())
-    {
+void loop() {
+    if (gladiator->game->isStarted()) {
+        update_maze();
+        move_to_next_bomb();
         bomb_placement();
-        update_maze();  // Mise à jour du suivi du labyrinthe
-        search_next_square();  // Recherche d'une nouvelle case
+
+    //     if (counter == -1){
+    //         counter++;
+    //         Serial.begin(9600); // Initialiser la communication série
+    //     }
+
+    //     unsigned long currentTime = millis(); // Temps actuel en millisecondes
+
+    // // Vérifier si 14 secondes se sont écoulées
+    //     if (currentTime - previousTime >= interval) {
+    //         previousTime = currentTime; // Réinitialiser le timer
+    //         counter++; // Incrémenter la variable
+    //     }
     }
-    delay(100);
+    delay(10);
 }
