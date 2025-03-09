@@ -7,13 +7,13 @@ Gladiator *gladiator;
 Maze *maze;
 
 int MAZE_SIZE = 3;
-float CELL_SIZE = MAZE_SIZE / 12.f;
+float CELL_SIZE = 0.25f;
 
-float kw = 1.7;
+float kw = 2.f;
 float kv = 1.5;
-float wlimit = 3.f;
+float wlimit = 4.f;
 float vlimit = 2.5f;
-float erreurPos = 0.5;
+float erreurPos = 0.07;
 
 int MAZE_TRACK[12][12] = {0};
 
@@ -160,7 +160,7 @@ Vector2 index_to_coordinates(int i, int j) {
 }
 
 Vector2 coordinates_to_index(Vector2 pos) {
-    return Vector2((int)(pos.x() / CELL_SIZE), (int)(pos.y() / CELL_SIZE));
+    return Vector2(static_cast<int>(pos.x() / CELL_SIZE), static_cast<int>(pos.y() / CELL_SIZE));
 }
 
 void update_maze() {
@@ -233,20 +233,20 @@ Node bfs_find_bomb(Vector2 start) {
 
 void move_to_next_bomb() {
     auto posRaw = gladiator->robot->getData().position;
+    gladiator->log("zaer Je suis à la position: (%f, %f)", posRaw.x, posRaw.y);
     Vector2 pos{posRaw.x, posRaw.y};
     Vector2 posIndex = coordinates_to_index(pos);
+    gladiator->log("zaerzearfazvr Je suis à la position: (%f, %f)", posIndex.x(), posIndex.y());
 
     Node nextMove = bfs_find_bomb(posIndex);
-    gladiator->log(("nextMove: " + std::to_string(nextMove.x) + ", " + std::to_string(nextMove.y)).c_str());
+    gladiator->log("zaer Je vais à la position: (%d, %d)", nextMove.x, nextMove.y);
+    Vector2 target = index_to_coordinates(nextMove.x, nextMove.y);
+    gladiator->log("zaer Je vais à la position: (%f, %f)", target.x(), target.y());
     
-    //si on est à la distance inférieur à erreurPos d'une bombe et qu'elle n'est pas dérriere un mur, on va dans sa direction
-    Vector2 nextMovePos = index_to_coordinates(nextMove.x, nextMove.y);
-    Vector2 nextMoveDir = nextMovePos - pos;
-    if (nextMoveDir.norm2() < erreurPos) {
-        gladiator->log("Going to bomb with first move at %f, %f", nextMovePos.x(), nextMovePos.y());
-        go_to(nextMovePos, pos);
+    if (gladiator->maze->getSquare(posIndex.x(), posIndex.y())->coin.value > 0) {
+        Vector2 thisSquare = index_to_coordinates(posIndex.x(), posIndex.y());
+        go_to(thisSquare, pos);
     }
-
     else if (nextMove.x != (int)posIndex.x() || nextMove.y != (int)posIndex.y()) {
         go_to(index_to_coordinates(nextMove.x, nextMove.y), pos);
     }
